@@ -9,7 +9,7 @@ const Header = () => {
       <div
        className="flex justify-between p-4"
       >
-        <h1>Attendance System</h1>
+        <h1><b>Attendance System</b></h1>
         <div className="flex gap-5">
           <NavLink to="/">
             <Button>ADD</Button>

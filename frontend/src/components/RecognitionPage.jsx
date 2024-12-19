@@ -68,7 +68,7 @@ function Recognize() {
 
   return (
     <div>
-      <div className="flex justify-between ">
+      <div className="flex justify-between gap-5">
         <div>
           <Card>
             <Webcam

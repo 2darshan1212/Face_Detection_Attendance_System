@@ -14,16 +14,18 @@ import base64
 if not os.path.exists('images'):
     os.makedirs('images')
 
+# Flask app and CORS setup
 app = Flask(__name__)
 CORS(app)
 
-# Database connection
-MONGODB_URI = "mongodb+srv://darshanmisaal1212:darshan1212@cluster0.lwqbl.mongodb.net/attendance_System?retryWrites=true&w=majority&appName=Cluster0&tls=true"
+# MongoDB connection setup
+MONGODB_URI = "mongodb://localhost:27017"
 client = pymongo.MongoClient(MONGODB_URI)
 db = client['attendance_system']
 
+# Locks and thread pool for concurrency
 attendance_lock = Lock()
-face_data_lock = Lock()  # New lock for face encoding data
+face_data_lock = Lock()
 executor = ThreadPoolExecutor(max_workers=3)
 
 # Global variables for face data
@@ -32,7 +34,7 @@ known_face_names = []
 known_face_details = {}
 last_attendance_time = {}
 
-# Load known faces from database and local images
+# Function to load known faces from database and local images
 def load_known_faces():
     global known_face_encodings, known_face_names, known_face_details
     print("Loading known faces...")
@@ -42,10 +44,10 @@ def load_known_faces():
         known_face_names.clear()
         known_face_details.clear()
 
-        # Iterate through 'images' folder to load known faces
+        # Load images from the 'images' directory
         for filename in os.listdir('images'):
             if filename.endswith(".jpg") or filename.endswith(".png"):
-                name = os.path.splitext(filename)[0]
+                name = os.path.splitext(filename)[0]  # Extract name without extension
                 img_path = os.path.join('images', filename)
                 img = face_recognition.load_image_file(img_path)
                 encodings = face_recognition.face_encodings(img)
@@ -55,7 +57,7 @@ def load_known_faces():
                     known_face_encodings.append(encoding)
                     known_face_names.append(name)
 
-                    # Load enrollment number and semester from the database
+                    # Retrieve user details from the database
                     try:
                         user_data = db['users'].find_one({"name": name})
                         if user_data:
@@ -68,13 +70,14 @@ def load_known_faces():
 
     print(f"Loaded {len(known_face_names)} faces.")
 
-# Mark attendance in the attendance collection
+# Function to mark attendance
 def mark_attendance(name):
     now = datetime.now()
     date_today = now.strftime("%Y-%m-%d")
     time_only = now.strftime("%H:%M:%S")
 
     with attendance_lock:
+        # Check for recent attendance to prevent duplicates
         if name in last_attendance_time:
             last_time, last_date = last_attendance_time[name]
             if last_date == date_today and now - last_time < timedelta(hours=2):
@@ -93,12 +96,11 @@ def mark_attendance(name):
         }
         attendance_collection.insert_one(attendance_record)
         print(f"Attendance marked for {name} at {time_only}.")
-
         update_attendance_html([(name, time_only)])
     except Exception as e:
         print(f"Error marking attendance for {name}: {e}")
 
-# Update attendance HTML report
+# Function to update the attendance HTML report
 def update_attendance_html(attendance_records):
     date_today = datetime.now().strftime("%Y-%m-%d")
     html_filename = f"{date_today}_attendance.html"
@@ -117,81 +119,85 @@ def update_attendance_html(attendance_records):
     
     print(f"Updated HTML file: {html_filename}")
 
-# API endpoint to add a new user via HTTP
+# API endpoint to add a new user
 @app.route('/add-user', methods=['POST'])
 def add_user():
-    data = request.form
-    image_data = data['image']
-    name = data['name']
-    enrollment_number = data['enrollment_number']
-    semester = data['semester']
+    try:
+        data = request.form
+        name = data['name']
+        enrollment_number = data['enrollment_number']
+        semester = data['semester']
+        image_data = data['image']
 
-    # Decode image data
-    header, encoded = image_data.split(",", 1)
-    image = base64.b64decode(encoded)
+        # Decode and save the image with the user's name
+        header, encoded = image_data.split(",", 1)
+        image = base64.b64decode(encoded)
+        img_path = os.path.join('images', f"{name}.jpg")  # Use name for the filename
+        with open(img_path, "wb") as img_file:
+            img_file.write(image)
 
-    img_filename = f"{name}.jpg"
-    img_path = os.path.join('images', img_filename)
-    with open(img_path, "wb") as img_file:
-        img_file.write(image)
+        # Insert user details into MongoDB
+        user_data = {
+            "name": name,
+            "enrollment_number": enrollment_number,
+            "semester": semester,
+            "date_added": datetime.now().strftime("%Y-%m-%d")
+        }
+        db['users'].insert_one(user_data)
 
-    # Store user data
-    user_data = {
-        "name": name,
-        "enrollment_number": enrollment_number,
-        "semester": semester,
-        "date_added": datetime.now().strftime("%Y-%m-%d")
-    }
-    db['users'].insert_one(user_data)
+        # Reload known faces
+        executor.submit(load_known_faces)
 
-    # Reload face encodings asynchronously
-    executor.submit(load_known_faces)
+        return jsonify({"success": f"New user added: {name}"}), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to add user. Error: {str(e)}"}), 500
 
-    return jsonify({"success": f"New user added: {name}"})
-
-# API endpoint to recognize faces via POST request
+# API endpoint to recognize faces
 @app.route('/recognize', methods=['POST'])
 def recognize_faces_api():
-    data = request.form['image']
-    
-    header, encoded = data.split(",", 1)
-    image_data = base64.b64decode(encoded)
+    try:
+        data = request.form['image']
+        
+        header, encoded = data.split(",", 1)
+        image_data = base64.b64decode(encoded)
 
-    np_array = np.frombuffer(image_data, np.uint8)
-    frame = cv2.imdecode(np_array, cv2.IMREAD_COLOR)
+        np_array = np.frombuffer(image_data, np.uint8)
+        frame = cv2.imdecode(np_array, cv2.IMREAD_COLOR)
 
-    small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
-    rgb_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
+        small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
+        rgb_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
 
-    face_locations = face_recognition.face_locations(rgb_frame)
-    face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+        face_locations = face_recognition.face_locations(rgb_frame)
+        face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
 
-    face_names = []
+        face_names = []
 
-    with face_data_lock:
-        for face_encoding in face_encodings:
-            face_distances = face_recognition.face_distance(known_face_encodings, face_encoding)
-            confidence_threshold = 0.45
-            best_match_index = np.argmin(face_distances)
+        with face_data_lock:
+            for face_encoding in face_encodings:
+                face_distances = face_recognition.face_distance(known_face_encodings, face_encoding)
+                confidence_threshold = 0.45
+                best_match_index = np.argmin(face_distances)
 
-            if face_distances[best_match_index] < confidence_threshold:
-                name = known_face_names[best_match_index]
-            else:
-                name = "Unknown"
+                if face_distances[best_match_index] < confidence_threshold:
+                    name = known_face_names[best_match_index]
+                else:
+                    name = "Unknown"
 
-            face_names.append(name)
+                face_names.append(name)
 
-            if name != "Unknown":
-                executor.submit(mark_attendance, name)
+                if name != "Unknown":
+                    executor.submit(mark_attendance, name)
 
-    response = {
-        "recognized_faces": face_names,
-        "face_locations": face_locations
-    }
+        response = {
+            "recognized_faces": face_names,
+            "face_locations": face_locations
+        }
 
-    return jsonify(response)
+        return jsonify(response), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to recognize faces. Error: {str(e)}"}), 500
 
-# API to get attendance by date
+# API endpoint to fetch attendance by date
 @app.route('/attendance', methods=['GET'])
 def get_attendance():
     date = request.args.get('date')
@@ -207,7 +213,7 @@ def get_attendance():
         print(f"Error fetching attendance for {date}: {e}")
         return jsonify({"error": "Failed to fetch attendance records"}), 500
 
-    return jsonify(records)
+    return jsonify(records), 200
 
 if __name__ == '__main__':
     load_known_faces()

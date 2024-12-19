@@ -1,20 +1,28 @@
+
+
 import React, { useState, useRef } from "react";
+ import Header from "./Header";
 import axios from "axios";
 import Webcam from "react-webcam";
-import { ToastContainer, toast } from "react-toastify"; // Import react-toastify components
-import "react-toastify/dist/ReactToastify.css"; // Import react-toastify styles
-
-import Header from "./Header";
 import "ui-neumorphism/dist/index.css";
+import { ToastContainer, toast } from "react-toastify";
 import { Card, TextField } from "ui-neumorphism";
+import "react-toastify/dist/ReactToastify.css";
 
 function AddUser() {
   const [name, setName] = useState("");
   const [enrollmentNumber, setEnrollmentNumber] = useState("");
   const [semester, setSemester] = useState("");
+  const [loading, setLoading] = useState(false);
   const webcamRef = useRef(null);
 
   const capture = async () => {
+    if (!name || !enrollmentNumber || !semester) {
+      toast.error("Please fill all the fields.");
+      return;
+    }
+
+    setLoading(true);
     try {
       const imageSrc = webcamRef.current.getScreenshot();
       const formData = new FormData();
@@ -29,73 +37,70 @@ function AddUser() {
       );
 
       if (response.data.success) {
-        toast.success("User added successfully!"); // Show success toast
-        setName(""); // Clear name field
-        setEnrollmentNumber(""); // Clear enrollment field
-        setSemester(""); // Clear semester field
+        toast.success("User added successfully!");
+        setName("");
+        setEnrollmentNumber("");
+        setSemester("");
       } else {
-        toast.error(response.data.error || "Error adding user!"); // Show error toast
+        toast.error(response.data.error || "Error adding user!");
       }
     } catch (error) {
-      toast.error("An error occurred. Please try again."); // Show error toast
+      toast.error("An error occurred. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
+   
     <div className="flex flex-col  h-fit w-auto ">
       <Header />
-      <div className="flex p-5 justify-center  ">
-        <Card className="flex flex-row-reverse gap-15 justify-center rounded-md  bg-blue-200">
-          <Card className="flex flex-col gap-1 font-extrabold p-10">
-            <label htmlFor="name">Name :</label>
-            <TextField
+      <div className="flex p-5 justify-center">
+        <Card className="flex flex-row-reverse gap-10 p-5 rounded-md bg-blue-200 shadow-lg h-96">
+          <Card className="flex flex-col gap-6 font-semibold p-6 w-80">
+            <input
               id="name"
               type="text"
-              className="p-1 rounded-md"
-              placeholder="..."
+              placeholder="Name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
+              className="p-2 rounded-lg border border-gray-400 bg-slate-200 hover:border-slate-300"
             />
-            <label htmlFor="enroll">Enrollment Number :</label>
-            <TextField
-              id="enroll"
-              className="p-1 rounded-md"
+            <input
+              id="enrollmentNumber"
               type="text"
-              placeholder="..."
+              placeholder="Enrollment Number"
               value={enrollmentNumber}
               onChange={(e) => setEnrollmentNumber(e.target.value)}
               required
+              className="p-2 rounded-lg border border-gray-400 bg-slate-200"
             />
-            <label htmlFor="semester">Semester :</label>
-            <TextField
+            <input
               id="semester"
-              className="p-1 rounded-md"
               type="text"
-              placeholder="..."
+              placeholder="Semester"
               value={semester}
               onChange={(e) => setSemester(e.target.value)}
               required
+              className="p-2 rounded-lg border border-gray-400 bg-slate-200"
             />
-            <div className="mt-16">
-              <button
-                onClick={capture}
-                className="bg-green-900 rounded-lg p-5 text-white"
-              >
-                Capture & Add User
-              </button>
-            </div>
+            <button
+              onClick={capture}
+              className="mt-4 bg-green-700 hover:bg-green-800 text-white rounded-lg p-3"
+              disabled={loading}
+            >
+              {loading ? "Adding..." : "Capture & Add User"}
+            </button>
           </Card>
-          <div className="flex justify-center align-middle  ">
-            <div className="h-auto  justify-center align-middle py-10 px-4">
-              <Webcam
-                audio={false}
-                ref={webcamRef}
-                screenshotFormat="image/jpeg"
-                className="h- rounded-lg p-1"
-                width="600px"
-              />
-            </div>
+          <div className="flex justify-center items-center w-80 h-auto">
+            <Webcam
+              audio={false}
+              ref={webcamRef}
+              screenshotFormat="image/jpeg"
+              className="rounded-lg shadow-lg"
+              width="300px"
+            />
           </div>
         </Card>
       </div>
@@ -106,3 +111,8 @@ function AddUser() {
 }
 
 export default AddUser;
+
+
+
+
+

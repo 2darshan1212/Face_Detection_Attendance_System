@@ -45,7 +45,7 @@ const AttendancePage = () => {
                 ) : (
                   records.map((record, index) => (
                     <ListItem key={index}>
-                      {record.name} 
+                      <b>{record.name}</b> 
                     </ListItem>
                   ))
                 )}
